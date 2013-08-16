@@ -1,0 +1,173 @@
+ttf2png - True Type Font to PNG converter
+Copyright (c) 2004-2008  Mikko Rasa, Mikkosoft Productions
+
+
+Software requirements
+
+FreeType 2
+libpng 1.2
+C compiler (preferably GCC)
+
+
+Command-line options
+
+  -r <low>,<high>
+    Range of characters to convert, specified as unicode code points.  The
+    default is 0,255, matching the ISO-8859-1 (Latin-1) character set.
+
+  -s <pixels>
+    Font size to use.  The default is 10 pixels.
+
+  -l <num>
+    Number of characters to put in one line.  Defaults to autodetect.  Ignored
+    if -p is used.
+
+  -c <pixels>[x<pixels>]
+    Character cell size.  If only a single number is given, a square cell is
+    used.  The special values auto and autorect may be used to choose an
+    autodetected square or rectangle cell, respectively.  The default is auto.
+    Ignored if -p is used.
+
+  -o <filename>
+    Output file name.  Use - for stdout; the output is a png image, so it's
+    best to pipe it somewhere.  The default is font.png.
+
+  -a
+    Force autohinter.  By default native hinting is used if present in the
+    font.
+
+  -t
+    Render glyphs to alpha channel, with grey channel filled with white.  By
+    default only the grey channel is used.
+
+  -i
+    Invert colors of the glyphs.  When rendering to alpha channel, only the
+    alpha channel is inverted.
+
+  -v
+    Increase the level of verbosity.
+
+  -e
+    Use cells in sequence, without leaving gaps.  By default the position of
+    each glyph is determined by its code point.  Ignored if -p is used.
+
+  -p
+    Pack the glyphs tightly in the image.  One-pixel gaps are left between
+    glyphs.  By default glyphs are rendered in a regular grid.  Creating a
+    definition file is recommended, as the resulting image can seem rather
+    messy.
+
+  -d
+    File name to write glyph definitions.  See the section below for details.
+
+  -h
+    Print a help message with option summary.
+
+
+Glyph definition files
+
+Rendering a proportional font correctly requires some positioning and spacing
+information, called font metrics.  To that end, ttf2png can write a definition
+file alongside the image.
+
+The basic format is line-based.  Empty lines, or those starting with a hash
+sign (#), should be ignored.  Data lines consist of a keyword followed by
+space-separated fields.
+
+The keyword "font" is followed by five fields with overall information about
+the image and the font:
+
+  Fields 1-2: width and height of the image
+  Field 3: nominal size of the font
+  Fields 4-5: ascent and descent of the font
+
+The keyword "glyph" is followed by eight fields describing a single glyph:
+
+  Field 1: the code point of the glyph
+  Fields 2-3: x and y position of the glyph in the image
+  Fields 4-5: width and height of the glyph
+  Fields 6-7: x and y offset of the glyph from its base point
+  Field 8: advance from this glyph to the next
+
+The keyword "kern" is followed by three fields describing kerning between two
+glyphs:
+
+  Field 1: the code point of the left-hand glyph
+  Field 2: the code point of the right-hand glyph
+  Field 3: kerning distance between the glyphs
+
+The following ASCII art image illustrates most of these metrics.  Note that in
+some fonts, not all of the glyphs fit completely inside the character box.
+
+                - - - - - - - -     ^
+               | character box |    |
+                                    |
+               |               |    |
+                   o-------o        | ascent
+               |   |       |   |    |
+                   | glyph |        |
+               |   |       |   |    |
+    base point     |       |        |
+             \ |   |       |   |    |
+              \    |       |        |
+           _ __x___|_______|___|____|__ baseline
+  y_offset |       |       |        |
+           v   |   o-------o   |    | descent
+                - - - - - - - -     v
+           
+               |--->
+               x_offset
+
+               |--------------->
+               advance
+
+
+Changelog
+
+1.0
+- Improve the packing algorithm
+- Non-square cells for grid mode
+- Option to invert colors
+- Include kerning information in definition file
+
+0.3
+- Restructure the code
+- Add tight packing mode
+- Autodetect cell size and chars-per-line in grid mode
+
+0.2.2
+- Write both X and Y offsets of glyphs to the definition file
+- Output font ascent and descent to definition file
+
+0.2.1
+- Don't create too large image with sequential mode if the range is sparse
+
+0.2
+- Added output to stdout
+- Clean up code a bit
+- Added sequential mode
+- Added definition file writing
+
+0.1.1
+- Added more verbosity
+- Added transparency mode
+
+0.1
+- Initial release
+
+
+License
+
+This program is free software; you can redistribute it and/or
+modify it under the terms of the GNU General Public License
+as published by the Free Software Foundation; either version 2
+of the License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
