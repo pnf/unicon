@@ -3,149 +3,136 @@ import scipy
 from numpy import *
 import pylab as py
 import scipy.linalg
-import urllib, hashlib, os, random
+import urllib, hashlib, os, random, re
 import matplotlib.pyplot as plt
+import matplotlib.cm as cm
+from skimage.filter import canny
+import scipy.ndimage as ndimage
+
+# E.g.
+# g = get_gravatar_array("pnf@podsnap.com",sz=100,mask=((0,10),(80,90)),shrink=0.0,edge=(5,20,2,2))
+# unis = get_unichars(100,100,snub=10)
+# ya = anneal(unis,g, 1.0e7,3,1000000,50000,1)
  
 i1 = 0
 i2 = 4000
-sz = 20
+sz = 100
+dim = 100
 
-def get_unichars(i1,i2,sz,dim):
-    # Columns of F will be candidates
-    F = [scipy.misc.imread("output/uni%05d.png" % i) for i in range(i1,i2+1)]
-    F = [scipy.misc.imresize(i,(sz,sz)) for i in F]
-    F = array([i.flatten() for i in F])
-    F = 255-F.transpose()
+def get_unichars(sz,dim,snub=0,shifts=[]):
+    files = os.listdir("chars")
+    files = [(f,re.search("([\dabcdef]+)\.gif",f)) for f in files] #HEX.gif
+    files = [(f,int(m.group(1),16)) for (f,m) in files if m]
+    files = [(f,i) for (f,i) in files if i>0 and i<0x10000]  # max unicode in python
+    C = [unichr(i) for (f,i) in files]
+    F = [scipy.misc.imread("chars/" + f) for (f,i) in files]
+    F = [scipy.misc.imresize(f,(sz,sz)) for f in F]
+    for (dx,dy) in shifts:
+        F.extend([shift(f,sz,dx,dy) for f in F])
+        C.extend(C)
+        #F.extend([shift(f,sz,nshift,0) for f in F])
+        #C.extend(C)
+        #F.extend([shift(f,sz,0,nshift) for f in F])
+        #F.extend([shift(f,sz,0,-nshift) for f in F])
+    F = array([f.flatten() for f in F])
+    F = 255-255*F.transpose()     #n_pixels x n_chars
     (u,d,vh) = linalg.svd(F)
     # Columns of u are orthogonal basis of images (cols of v are onb of pixels...)
     # Projection of characters onto basis:
-    u = u[:,:dim]
-    ps = u.transpose().dot(F).transpose()
-    return (F,u,d,vh,ps)
+    u = u[:,snub:(snub+dim)]  # n_pixels x n_chars ==> n_pixels x n_dim
+    ps = u.transpose().dot(F).transpose()  # n_chars x n_dims
+    return (files,C,F,u,d,vh,ps)
 
-def get_gravatar_array(email,sz):
-    gravatar = hashlib.md5(email.lower()).hexdigest() + ".jpg"
-    fname = "/tmp/" + gravatar
-    url = "http://www.gravatar.com/avatar/" + gravatar
+# g3 = (ndimage.gaussian_filter(255*canny(g.reshape(100,100),3,10,2),sigma=1.5).flatten()>50)*255
+# 4 =(ndimage.gaussian_filter(255*canny(g.reshape(100,100),3,25,2),sigma=2).flatten()>50)*255
+def get_gravatar_array(email,sz=100,edge=(3,25,2,2),mask=((5,10),(80,90)),shrink=0.0):
+    g = hashlib.md5(email.lower()).hexdigest() + ".jpg"
+    fname = "/tmp/" + g
+    url = "http://www.gravatar.com/avatar/" + g
     os.system("curl -s -o %s %s" % (fname,url))
-    gravatar = scipy.misc.imread(fname,flatten=True)[5:75,5:75]
-    gravatar = 255-scipy.misc.imresize(gravatar,(sz,sz)).flatten()
-    return gravatar
+    g = scipy.misc.imread(fname,flatten=True)[5:75,5:75]
+    g = 255-scipy.misc.imresize(g,(sz,sz))
+    if edge:
+        (sigma,hi,low,sigma2) = edge
+        g = 255*canny(g,sigma,hi,low)
+        g = (ndimage.gaussian_filter(g,sigma=sigma2)>25)*255
+    if mask:
+        ((r1,c1),(r2,c2)) = mask
+        g[r2:,:] = 0
+        g[:r1,:] = 0
+        g[:,:c1] = 0
+        g[:,c2:] = 0
+    if shrink>0.0:
+        (nx,ny) = g.shape
+        px = int(nx*shrink/2)
+        py = int(ny*shrink/2)
+        g = concatenate((zeros((py,nx),dtype=g.dtype),
+                         g,
+                         zeros((py,nx),dtype=g.dtype)), axis=0)
+        g = concatenate((zeros((ny+2*py,px),dtype=g.dtype),
+                         g,
+                         zeros((ny+2*py,px),dtype=g.dtype)),axis=1)
+        g = scipy.misc.imresize(g,(sz,sz))
+    g = g.flatten()
+    return g
 
-
-#unis = (F,u,d,vh,ps) = get_unichars(i2,sz)
 
 def you1(unis,gravatar,n):
-    (F,u,d,vh,ps) = unis
+    (files,C,F,u,d,vh,ps) = unis
     pg = u.transpose().dot(gravatar)
-    dist = [(ps[i]-pg).dot(ps[i]-pg) for i in range(i1,i2+1)]
+    dist = [(ps[i]-pg).dot(ps[i]-pg) for i in range(len(ps))]
     ranks = sorted(range(len(dist)),key=dist.__getitem__)
     you = zeros(len(gravatar),dtype=uint8)
+    state = ranks[:n]
     for i in range(0,n):
-        you = you + F[:,ranks[i]]
-    return (you,ranks[:n])
+        you = you + F[:,state[i]]
+    us = " ".join([C[i] for i in state])
+    return (you,ranks[:n],us)
 
-def find_closest(v,vs):
-    dmin = 0
-    ic = 0
-    for i in range(len(vs)):
-        d = sqrt((vs[i]-v).dot(vs[i]-v))
-        if i==0 or d<dmin:
-            dmin = d
-            ic = i
-    print ic,d
-    return ic
-
-# Subtract last 
-def you2(unis,gravatar,n):
-    (F,u,d,vh,ps) = unis
-    pg = u.transpose().dot(gravatar)
-    you = zeros(len(gravatar),dtype=uint8)
-    for i in range(n):
-        ic = find_closest(pg,ps)
-        print ic
-        pg = pg - ps[ic]
-        you = you + F[:,ic]
-    return you
-
-def find_closish(v,vs,prev,eps):
-    dmin = 0
-    ic = 0
-    for i in range(len(vs)):
-        d = sqrt((vs[i]-v).dot(vs[i]-v))
-        ok = True
-        if i==0 or d<dmin:
-            for j in prev:
-                dp = sqrt((vs[i]-vs[j]).dot(vs[i]-vs[j]))
-                if dp<eps:
-                    ok = False
-                    continue
-            if ok:
-                dmin = d
-                ic = i
-    print dmin,ic
-    return ic
-
-# Ignore anything too close to what we've found so far.
-def you3(unis,gravatar,n):
-    (F,u,d,vh,ps) = unis
-    pg = u.transpose().dot(gravatar)
-    ret = []
-    you = zeros(len(gravatar),dtype=uint8)
-    for i in range(n):
-        ic = find_closish(pg,ps,ret,100.0)
-        ret.append(ic)
-        you = you + F[:,ic]
-    return (you,ret)
-
-# Simulated annealing.
-# probability will be exp(sum(d^2)/T)
-
-# actually log of prob
-def prob(ps,pg,dims,state,T):
-    d = 0
-    v = zeros(dims)
-    for i in state:
-        v = v + ps[i][:dims]
-    v = pg[:dims] - v/len(state)
-    return -v.dot(v)/T  # low is bad!
-    
-
-def anneal(unis,g,dims,T,Nchar,Nsteps,status=0,fig=-1):
-    (F,u,d,vh,ps) = unis
+def anneal(unis,g,T,Nchar,Nsteps,status=0,fig=-1):
+    (files,C,F,u,d,vh,ps) = unis
     sz = int(sqrt(len(g))+0.5)
     pg = u.transpose().dot(g)
     random.seed()
-    Nunis = len(F)
-    #state = [random.randrange(Nunis) for i in range(Nchar)]
-    (y,state) = you1(unis,g,Nchar)
-    p = prob(ps,pg,dims,state,T)
-    # select T so that current probability is 0.9
-    # T = p/log(0.5)
-    dT = T/float(Nsteps)
+    Nunis = F.shape[1]
+    # Start with the naive Nchar nearest characters:
+    (y,state,us) = you1(unis,g,Nchar)
+    state = array(state)
+    aT = exp(-log(T)/float(Nsteps))
+    nchange = 0
+    ichanged = 0
+    v = pg - ps[state,:].sum(axis=0)
+    p = -v.dot(v)/T
+
     for i in range(Nsteps):
-        state2 = list(state)
-        state2[random.randrange(Nchar)] = random.randrange(Nunis);
-        p2 = prob(ps,pg,dims,state2,T)
+        j = random.randrange(Nchar)
+        k = random.randrange(Nunis)
+        kold = state[j]
+        state[j] = k
+        p = p/aT
+        v = pg - ps[state,:].sum(axis=0)
+        p2 = -v.dot(v)/T
         r = log(random.random())
         if status and not i % status:
-            print i,T,p,p2,r,(p2-p)>r,exp(p2-p),exp(r),state,state2
+            us = " ".join([C[ii] for ii in state])
+            print i,T,p*T,p,p2,nchange,state,us
             if fig>=0:
-                v = zeros(len(g))
-                for i in state:
-                    v = v + F[:,i]
-                v = v/len(state)
+                v = F[:,state].sum(axis=1)
                 plt.figure(fig)
                 plt.clf()
-                plt.imshow(v.reshape(sz,sz))
+                plt.imshow(-((1.0*v+0.5*g)).reshape(sz,sz),cmap=cm.gray)
                 plt.draw()
-        if p2>p or (p2-p)>r:
+        if (p2>p or (p2-p)>r):
             p = p2
-            state = state2
-        T = T - dT
-    v = zeros(len(g))
+            nchange = nchange + 1
+            ichanged = i
+        else:
+            state[j] = kold
+        if (i-ichanged)>(Nsteps/10):
+            break
+        T = T*aT
+    v = zeros(len(g),dtype=uint8)
     for i in state:
         v = v + F[:,i]
-    v = v/len(state)
-    us = repr("".join([unichr(i) for i in state])).decode("unicode-escape")
+    us = " ".join([C[i] for i in state])
     return (v,us,state)
