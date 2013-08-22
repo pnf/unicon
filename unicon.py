@@ -19,7 +19,7 @@ i2 = 4000
 sz = 100
 dim = 100
 
-def get_unichars(sz,dim,snub=0,shifts=[]):
+def get_unichars(sz=100,dim=100,snub=0,shifts=[]):
     files = os.listdir("chars")
     files = [(f,re.search("([\dabcdef]+)\.gif",f)) for f in files] #HEX.gif
     files = [(f,int(m.group(1),16)) for (f,m) in files if m]
@@ -45,7 +45,8 @@ def get_unichars(sz,dim,snub=0,shifts=[]):
 
 # g3 = (ndimage.gaussian_filter(255*canny(g.reshape(100,100),3,10,2),sigma=1.5).flatten()>50)*255
 # 4 =(ndimage.gaussian_filter(255*canny(g.reshape(100,100),3,25,2),sigma=2).flatten()>50)*255
-def get_gravatar_array(email,sz=100,edge=(3,25,2,2),mask=((5,10),(80,90)),shrink=0.0):
+
+def get_gravatar_array(email,sz=100,edge=(5,20,2,2),mask=((0,10),(80,90)),shrink=0.0):
     g = hashlib.md5(email.lower()).hexdigest() + ".jpg"
     fname = "/tmp/" + g
     url = "http://www.gravatar.com/avatar/" + g
@@ -89,7 +90,8 @@ def you1(unis,gravatar,n):
     us = " ".join([C[i] for i in state])
     return (you,ranks[:n],us)
 
-def anneal(unis,g,T,Nchar,Nsteps,status=0,fig=-1):
+
+def anneal(unis,g,T=1.0e7,Nchar=4,Nsteps=1000000,status=50000,fig=1):
     (files,C,F,u,d,vh,ps) = unis
     sz = int(sqrt(len(g))+0.5)
     pg = u.transpose().dot(g)
@@ -109,13 +111,15 @@ def anneal(unis,g,T,Nchar,Nsteps,status=0,fig=-1):
         k = random.randrange(Nunis)
         kold = state[j]
         state[j] = k
-        p = p/aT
+        p = p * aT
         v = pg - ps[state,:].sum(axis=0)
-        p2 = -v.dot(v)/T
+        d = v.dot(v)
+        #d = d*d
+        p2 = -d/T
         r = log(random.random())
         if status and not i % status:
             us = " ".join([C[ii] for ii in state])
-            print i,T,p*T,p,p2,nchange,state,us
+            print i,T,d,p,p2,(p-p2)/r,nchange,state,us
             if fig>=0:
                 v = F[:,state].sum(axis=1)
                 plt.figure(fig)
@@ -129,6 +133,7 @@ def anneal(unis,g,T,Nchar,Nsteps,status=0,fig=-1):
         else:
             state[j] = kold
         if (i-ichanged)>(Nsteps/10):
+            print "Stopping",i,ichanged
             break
         T = T*aT
     v = zeros(len(g),dtype=uint8)
